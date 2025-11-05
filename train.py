@@ -2,13 +2,14 @@ import os
 import time
 import json
 from typing import Dict
+import argparse
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
 from load_data import get_data_loaders
-from net import Net
+from models import MODEL_REGISTRY
 
 
 def train_one_epoch(model, dataloader, criterion, optimizer, device):
@@ -58,31 +59,44 @@ def evaluate(model, dataloader, criterion, device):
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Entrenar modelos CNN para detección de cara/no-cara')
+    parser.add_argument('--model', type=str, default='baseline', choices=sorted(MODEL_REGISTRY.keys()),
+                        help='Modelo a entrenar')
+    parser.add_argument('--epochs', type=int, default=10, help='Número de épocas')
+    parser.add_argument('--batch-size', type=int, default=64, help='Tamaño de batch')
+    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
+    parser.add_argument('--num-workers', type=int, default=2, help='Workers para DataLoader')
+    args = parser.parse_args()
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     base_dir = os.path.dirname(__file__)
     train_loader, valid_loader, test_loader, classes = get_data_loaders(
         train_dir=os.path.join(base_dir, 'train_images'),
         test_dir=os.path.join(base_dir, 'test_images'),
-        batch_size=64,
+        batch_size=args.batch_size,
         valid_size=0.2,
-        num_workers=2,
+        num_workers=args.num_workers,
+        model_name=args.model,
+        use_augmentation=True,  # Enable data augmentation for better training
     )
 
-    model = Net().to(device)
+    ModelClass = MODEL_REGISTRY[args.model]
+    model = ModelClass().to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    num_epochs = 10
+    num_epochs = args.epochs
     best_valid_acc = 0.0
     history: Dict[str, list] = {
         'train_loss': [], 'train_acc': [], 'valid_loss': [], 'valid_acc': []
     }
 
-    artifacts_dir = os.path.join(base_dir, 'artifacts')
-    os.makedirs(artifacts_dir, exist_ok=True)
-    model_path = os.path.join(artifacts_dir, 'best_model.pt')
-    history_path = os.path.join(artifacts_dir, 'history.json')
+    artifacts_root = os.path.join(base_dir, 'artifacts')
+    model_dir = os.path.join(artifacts_root, args.model)
+    os.makedirs(model_dir, exist_ok=True)
+    model_path = os.path.join(model_dir, 'best_model.pt')
+    history_path = os.path.join(model_dir, 'history.json')
 
     for epoch in range(1, num_epochs + 1):
         start = time.time()

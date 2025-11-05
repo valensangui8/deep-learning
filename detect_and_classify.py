@@ -7,29 +7,43 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 
-from net import Net
+from models import MODEL_REGISTRY
 
 
-def load_model(checkpoint_path: str, device: torch.device) -> Net:
+def load_model(checkpoint_path: str, device: torch.device, model_name: str):
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(
             f"Checkpoint no encontrado en: {checkpoint_path}. Ejecuta primero el entrenamiento."
         )
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    model = Net().to(device)
+    ModelClass = MODEL_REGISTRY[model_name]
+    model = ModelClass().to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     return model
 
 
-def get_preprocess_transform() -> transforms.Compose:
-    return transforms.Compose([
-        transforms.ToPILImage(),
-        transforms.Grayscale(),
-        transforms.Resize((36, 36)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=(0.5,), std=(0.5,)),
-    ])
+def get_preprocess_transform(model_name: str) -> transforms.Compose:
+    """Get preprocessing transform based on model type"""
+    pretrained_models = ['resnet18', 'mobilenetv2', 'efficientnet']
+    if model_name in pretrained_models:
+        # Pretrained models: 224x224 RGB with ImageNet normalization
+        return transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Grayscale(num_output_channels=3),  # Convert to RGB
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+    else:
+        # Small CNNs: 36x36 grayscale
+        return transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Grayscale(),
+            transforms.Resize((36, 36)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.5,), std=(0.5,)),
+        ])
 
 
 def detect_faces(image_bgr, scale_factor: float = 1.1, min_neighbors: int = 5) -> List[Tuple[int, int, int, int]]:
@@ -40,9 +54,9 @@ def detect_faces(image_bgr, scale_factor: float = 1.1, min_neighbors: int = 5) -
     return [(int(x), int(y), int(w), int(h)) for (x, y, w, h) in faces]
 
 
-def classify_crops(image_bgr, boxes: List[Tuple[int, int, int, int]], model: Net, device: torch.device,
-                   threshold: float = 0.5) -> List[Tuple[Tuple[int, int, int, int], int, float]]:
-    transform = get_preprocess_transform()
+def classify_crops(image_bgr, boxes: List[Tuple[int, int, int, int]], model, device: torch.device,
+                   model_name: str, threshold: float = 0.5) -> List[Tuple[Tuple[int, int, int, int], int, float]]:
+    transform = get_preprocess_transform(model_name)
     results = []
     for (x, y, w, h) in boxes:
         crop = image_bgr[y:y + h, x:x + w]
@@ -73,10 +87,12 @@ def draw_annotations(image_bgr, results: List[Tuple[Tuple[int, int, int, int], i
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Detectar caras y clasificarlas usando el modelo existente")
+    parser = argparse.ArgumentParser(description="Detectar caras y clasificarlas usando un modelo elegido")
     parser.add_argument("image", type=str, help="Ruta a la imagen de entrada")
-    parser.add_argument("--checkpoint", type=str, default=os.path.join(os.path.dirname(__file__), "artifacts", "best_model.pt"),
-                        help="Ruta al checkpoint del modelo")
+    parser.add_argument("--model", type=str, default="baseline", choices=sorted(MODEL_REGISTRY.keys()),
+                        help="Nombre del modelo a usar")
+    parser.add_argument("--checkpoint", type=str, default=None,
+                        help="Ruta al checkpoint del modelo (por defecto usa artifacts/<model>/best_model.pt)")
     parser.add_argument("--scale-factor", type=float, default=1.1, help="Parámetro scaleFactor del detector Haar")
     parser.add_argument("--min-neighbors", type=int, default=5, help="Parámetro minNeighbors del detector Haar")
     parser.add_argument("--threshold", type=float, default=0.5, help="Umbral de probabilidad para 'face'")
@@ -85,14 +101,17 @@ def main():
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = load_model(args.checkpoint, device)
+    # Determinar ruta por defecto del checkpoint por modelo
+    if args.checkpoint is None:
+        args.checkpoint = os.path.join(os.path.dirname(__file__), "artifacts", args.model, "best_model.pt")
+    model = load_model(args.checkpoint, device, args.model)
 
     image_bgr = cv2.imread(args.image)
     if image_bgr is None:
         raise FileNotFoundError(f"No se pudo abrir la imagen: {args.image}")
 
     boxes = detect_faces(image_bgr, scale_factor=args.scale_factor, min_neighbors=args.min_neighbors)
-    results = classify_crops(image_bgr, boxes, model, device, threshold=args.threshold)
+    results = classify_crops(image_bgr, boxes, model, device, args.model, threshold=args.threshold)
 
     annotated = draw_annotations(image_bgr.copy(), results)
 
