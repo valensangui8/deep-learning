@@ -109,6 +109,19 @@ Salida:
 - Imagen anotada en `artifacts/detections_<nombre>.png` (o la ruta de `--save`).
 - Log con bbox, etiqueta y probabilidad por detección.
 
+### Ejecutar detección con todos los modelos
+
+Para procesar una imagen con cada modelo entrenado y generar una imagen anotada por modelo:
+
+```bash
+python3 detect_all_models.py /ruta/imagen.jpg --skip-missing
+```
+
+- Salva las imágenes en `artifacts/detections/<nombre_imagen>/<modelo>.png`.
+- Usa `--models baseline,improved,resnet18` para limitar la lista.
+- Ajusta `--threshold`, `--scale-factor`, `--min-neighbors` igual que en `detect_and_classify.py`.
+- Con `--skip-missing` omitirá modelos sin checkpoint, en lugar de fallar.
+
 ## Comparar modelos rápidamente sobre una imagen
 
 Calcula la probabilidad de “face” de TODOS los modelos registrados sobre una misma imagen (sin detección, a imagen completa). Útil para un sanity check y ranking rápido.
@@ -117,6 +130,128 @@ python3 compare_models.py /ruta/a/imagen.jpg --save
 ```
 - Imprime una tabla en consola.
 - Con `--save` genera `artifacts/compare_<nombre>.txt`.
+
+## Guía rápida para principiantes
+
+1) Instalar dependencias
+```bash
+# En entornos sin GUI (Jupyter/servidores) usa headless:
+pip install torch torchvision opencv-python-headless scikit-learn
+# En entornos con GUI local:
+pip install torch torchvision opencv-python scikit-learn
+```
+
+2) Preparar datos
+- Crea carpetas `train_images/0`, `train_images/1`, `test_images/0`, `test_images/1`.
+- Coloca imágenes de “no-cara” en `0/` y “cara” en `1/`.
+
+3) Entrenar
+```bash
+# Todos los modelos (recomendado si quieres compararlos)
+python3 train_all.py
+
+# Un modelo específico (más rápido)
+python3 train.py --model improved --epochs 10
+```
+Salida: `artifacts/<modelo>/best_model.pt` y `history.json`.
+
+4) Probar detección en una imagen
+```bash
+python3 detect_and_classify.py /ruta/imagen.jpg --model improved --show
+# Si estás en servidor/Jupyter, omite --show y revisa artifacts/detections_<nombre>.png
+```
+
+5) Probar con todos los modelos a la vez
+```bash
+python3 detect_all_models.py /ruta/imagen.jpg --skip-missing
+```
+Salida: una imagen anotada por modelo en `artifacts/detections/<nombre_imagen>/`.
+
+6) Comparar “probabilidad de cara” sin detección (imagen completa)
+```bash
+python3 compare_models.py /ruta/imagen.jpg --save
+```
+
+## ¿Qué significa el “porcentaje” que ves en las imágenes?
+- Es la probabilidad que el modelo asigna a la clase “face” (cara) para cada recorte detectado.
+- Si el valor es mayor o igual al umbral (`--threshold`, por defecto 0.5), la etiqueta será “face”; si no, “noface”.
+- Puedes elevar el umbral (por ejemplo 0.6–0.7) si prefieres menos falsos positivos, a costa de perder algunas caras verdaderas (recall menor).
+
+## Diferencias entre modelos (alto nivel)
+
+- Modelos pequeños (entrada 36x36, escala de grises):
+  - `tiny` y `small`: muy rápidos y ligeros; menor capacidad.
+  - `baseline`: referencia original, desempeño decente.
+  - `bn`: añade BatchNorm; entreno más estable.
+  - `threeconv`: un poco más profundo; suele mejorar.
+  - `residual`: atajos residuales; mejor flujo del gradiente.
+  - `improved`: mejor práctica (BatchNorm+Dropout2D/1D); robusto.
+  - `attention`: añade atención por canal (tipo SE); puede enfocarse mejor en rasgos útiles.
+
+- Preentrenados (entrada 224x224, RGB, normalización ImageNet):
+  - `resnet18`: buen equilibrio precisión/tiempo.
+  - `mobilenetv2`: muy eficiente en CPU/edge.
+  - `efficientnet`: gran precisión/eficiencia, algo más pesado.
+
+Reglas generales:
+- Si tu dataset es pequeño o variado, los preentrenados suelen generalizar mejor.
+- Si necesitas velocidad y poco consumo, usa `mobilenetv2` o `tiny/small`.
+- Si quieres un “caballo de batalla” sin preentrenamiento, prueba `improved` o `residual`.
+
+## ¿Cómo comparar modelos de forma justa?
+
+- Mismo conjunto de test para todos.
+- Mismo umbral (`--threshold`) si comparas “porcentaje de cara”.
+- Métricas recomendadas: accuracy, precision, recall, F1.
+- Opciones:
+  - Usar `test.py` para una evaluación y matriz de confusión (un modelo a la vez).
+  - Extender `compare_models.py` para iterar sobre `test_images/` y calcular métricas globales por modelo (sugerido para informes).
+
+Idea rápida (no implementada aún):
+- Script que recorra `test_images/`, ejecute cada modelo y compute accuracy/F1 por modelo, generando una tabla CSV.
+
+## Preguntas frecuentes / Troubleshooting
+
+- “No encuentro cv2 (OpenCV)”
+  - Instala: `pip install opencv-python-headless` (servidor/Jupyter) o `pip install opencv-python` (local con GUI).
+
+- “Los modelos preentrenados fallan con errores de ‘shared memory (shm)’”
+  - Ejecuta entrenos con `num_workers=0` para preentrenados. `train_all.py` ya lo hace por defecto.
+  - También puedes bajar `--batch-size` si hay poco RAM/GPU.
+
+- “No veo ventana con la imagen”
+  - En servidores/Jupyter no hay GUI. Omite `--show` y revisa la imagen guardada en `artifacts/`.
+
+- “No tengo checkpoint”
+  - Entrena primero: `python3 train.py --model baseline` (u otro).
+
+- “¿Cómo ajusto sensibilidad?”
+  - Sube el umbral (`--threshold 0.6` o `0.7`) para menos falsos positivos.
+  - Ajusta detector Haar con `--scale-factor` y `--min-neighbors`.
+
+## Glosario breve
+- “Detección”: encontrar dónde hay una cara (bounding box) en una imagen.
+- “Clasificación”: decidir si un recorte es “cara” o “no-cara”.
+- “Preentrenado”: el modelo ya aprendió rasgos generales de millones de imágenes (ImageNet) y luego lo ajustamos a tu tarea (fine-tuning).
+- “Data augmentation”: transformaciones de imagen (rotar, recortar, voltear) para hacer el modelo más robusto.
+
+## Comandos clave (chuleta)
+```bash
+# Entrenar todo
+python3 train_all.py
+
+# Entrenar uno
+python3 train.py --model improved --epochs 10
+
+# Detección con un modelo
+python3 detect_and_classify.py /ruta/imagen.jpg --model resnet18 --threshold 0.6
+
+# Detección con todos los modelos
+python3 detect_all_models.py /ruta/imagen.jpg --skip-missing
+
+# Comparar probabilidades sin detección
+python3 compare_models.py /ruta/imagen.jpg --save
+```
 
 ## Evaluación más completa (sugerida)
 
