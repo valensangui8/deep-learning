@@ -91,7 +91,7 @@ def main():
     parser.add_argument('--models', type=str, default='all', help="Lista separada por comas o 'all'")
     parser.add_argument('--save-dir', type=str, default=None, help='Directorio de salida para resultados/plots')
     parser.add_argument('--bootstrap', type=int, default=0, help='Número de remuestreos bootstrap (0 para desactivar)')
-    parser.add_argument('--ci', type=float, default=95.0, help='Intervalo de confianza en % (ej. 95)')
+    parser.add_argument('--ci', type=float, default=95.0, help='Intervalo de confianza en %% (ej. 95)')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
