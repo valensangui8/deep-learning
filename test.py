@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import argparse
 
 import torch
 import torch.nn.functional as F
@@ -8,27 +9,37 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 from load_data import get_data_loaders
-from net import Net
+from models import MODEL_REGISTRY
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Evaluate a model on test set and plot confusion matrix')
+    parser.add_argument('--model', type=str, default='baseline', choices=sorted(MODEL_REGISTRY.keys()),
+                        help='Model name to evaluate')
+    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--num-workers', type=int, default=2)
+    args = parser.parse_args()
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     base_dir = os.path.dirname(__file__)
     _, _, test_loader, classes = get_data_loaders(
         train_dir=os.path.join(base_dir, 'train_images'),
         test_dir=os.path.join(base_dir, 'test_images'),
-        batch_size=64,
-        num_workers=2,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        model_name=args.model,
+        use_augmentation=False,
     )
 
-    checkpoint_path = os.path.join(base_dir, 'artifacts', 'best_model.pt')
+    checkpoint_path = os.path.join(base_dir, 'artifacts', args.model, 'best_model.pt')
     if not os.path.exists(checkpoint_path):
-        print(f"Checkpoint no encontrado en: {checkpoint_path}. Ejecuta primero el entrenamiento:")
-        print(f"python {os.path.join(base_dir, 'train.py')}")
+        print(f"Checkpoint no encontrado en: {checkpoint_path}. Entrena primero el modelo seleccionado.")
+        print(f"python {os.path.join(base_dir, 'train.py')} --model {args.model}")
         return
     checkpoint = torch.load(checkpoint_path, map_location=device)
 
-    model = Net().to(device)
+    ModelClass = MODEL_REGISTRY[args.model]
+    model = ModelClass().to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
 
@@ -55,7 +66,7 @@ def main():
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=list(classes))
     disp.plot(cmap='Blues')
     plt.title('Confusion Matrix')
-    artifacts_dir = os.path.join(base_dir, 'artifacts')
+    artifacts_dir = os.path.join(base_dir, 'artifacts', args.model)
     os.makedirs(artifacts_dir, exist_ok=True)
     plt.savefig(os.path.join(artifacts_dir, 'confusion_matrix.png'), bbox_inches='tight')
     plt.close()
@@ -75,8 +86,20 @@ def main():
         for i in range(images.size(0)):
             if shown >= samples_to_show:
                 break
-            img = images[i].squeeze(0)  # 1x36x36 -> 36x36
-            axes[shown].imshow(img.numpy() * 0.5 + 0.5, cmap='gray')
+            img_t = images[i]
+            if img_t.shape[0] == 1:
+                img = img_t.squeeze(0).numpy() * 0.5 + 0.5
+                axes[shown].imshow(img, cmap='gray')
+            else:
+                # For RGB pretrained models (ImageNet normalization), unnormalize for display
+                img = img_t.clone().cpu().numpy()
+                # rough unnormalize for visualization
+                # mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]
+                img[0] = img[0] * 0.229 + 0.485
+                img[1] = img[1] * 0.224 + 0.456
+                img[2] = img[2] * 0.225 + 0.406
+                img = img.transpose(1, 2, 0).clip(0, 1)
+                axes[shown].imshow(img)
             pred_cls = classes[preds[i]]
             true_cls = classes[labels[i]]
             conf = probs[i, preds[i]].item()
