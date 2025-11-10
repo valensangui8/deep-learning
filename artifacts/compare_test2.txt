@@ -1,0 +1,13 @@
+Resultados (prob face)
+attention: 0.0521 -> noface
+baseline: 0.0000 -> noface
+bn: 0.0001 -> noface
+efficientnet: 0.0000 -> noface
+improved: 0.0027 -> noface
+large: 0.0009 -> noface
+mobilenetv2: 0.0000 -> noface
+residual: 0.0000 -> noface
+resnet18: 0.0000 -> noface
+small: 0.0219 -> noface
+threeconv: 0.0001 -> noface
+tiny: 0.0014 -> noface
