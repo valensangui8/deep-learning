@@ -131,6 +131,21 @@ python3 compare_models.py /ruta/a/imagen.jpg --save
 - Imprime una tabla en consola.
 - Con `--save` genera `artifacts/compare_<nombre>.txt`.
 
+## Evaluación comparativa de modelos (métricas + gráficos)
+
+Para evaluar todos (o un subconjunto) de modelos sobre el set de test y obtener una tabla con accuracy, precision, recall y F1, además de gráficos comparativos:
+
+```bash
+python3 evaluate_models.py
+# o limitar a algunos
+python3 evaluate_models.py --models baseline,improved,resnet18
+```
+
+Salida en `artifacts/evaluation/`:
+- `summary.csv`: tabla con métricas por modelo.
+- `accuracy.png`, `f1.png`, `precision.png`, `recall.png`: gráficos de barras comparativos.
+- `cm_<modelo>.png`: matrices de confusión de los top-3 modelos por accuracy.
+
 ## Guía rápida para principiantes
 
 1) Instalar dependencias
