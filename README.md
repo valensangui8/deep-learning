@@ -146,6 +146,20 @@ Salida en `artifacts/evaluation/`:
 - `accuracy.png`, `f1.png`, `precision.png`, `recall.png`: gráficos de barras comparativos.
 - `cm_<modelo>.png`: matrices de confusión de los top-3 modelos por accuracy.
 
+### Intervalos de confianza con Bootstrapping
+
+Puedes estimar la incertidumbre de las métricas con bootstrapping (remuestreo con reemplazo sobre el set de test):
+
+```bash
+# 1000 remuestreos y CI del 95%
+python3 evaluate_models.py --bootstrap 1000 --ci 95
+```
+
+Archivos adicionales:
+- `bootstrap_summary.csv`: media, desvío estándar y CI [low, high] por modelo y métrica.
+- `bootstrap_<modelo>.csv`: distribución bootstrap por métrica para cada modelo.
+- `<metric>_violin.png`: violines comparando la distribución bootstrap entre modelos.
+
 ## Guía rápida para principiantes
 
 1) Instalar dependencias
