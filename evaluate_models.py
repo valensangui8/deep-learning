@@ -12,6 +12,7 @@ import numpy as np
 
 from models import MODEL_REGISTRY
 from load_data import get_data_loaders
+from typing import Set
 
 
 def load_checkpoint(model_name: str, device: torch.device):
@@ -92,6 +93,8 @@ def main():
     parser.add_argument('--save-dir', type=str, default=None, help='Directorio de salida para resultados/plots')
     parser.add_argument('--bootstrap', type=int, default=0, help='Número de remuestreos bootstrap (0 para desactivar)')
     parser.add_argument('--ci', type=float, default=95.0, help='Intervalo de confianza en %% (ej. 95)')
+    parser.add_argument('--num-workers', type=int, default=2, help='Workers para CNNs pequeñas')
+    parser.add_argument('--pretrained-num-workers', type=int, default=0, help='Workers para modelos preentrenados')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -114,15 +117,18 @@ def main():
     per_model_cm = {}
     bootstrap_rows: List[Dict] = []
 
+    pretrained_models: Set[str] = {'resnet18', 'mobilenetv2', 'efficientnet'}
+
     for idx, model_name in enumerate(models_to_eval, 1):
         print(f"[{idx}/{len(models_to_eval)}] Evaluando {model_name}...")
         # Get dataloaders with correct preprocessing for this model
+        workers = args.pretrained_num_workers if model_name in pretrained_models else args.num_workers
         _, _, test_loader, _ = get_data_loaders(
             train_dir=os.path.join(project_dir, 'train_images'),
             test_dir=os.path.join(project_dir, 'test_images'),
             batch_size=64,
             valid_size=0.2,
-            num_workers=2,
+            num_workers=workers,
             shuffle_dataset=False,
             model_name=model_name,
             use_augmentation=False,
