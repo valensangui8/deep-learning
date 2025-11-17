@@ -6,6 +6,7 @@ import cv2
 import torch
 import torch.nn.functional as F
 
+from models import MODEL_REGISTRY
 from utils import load_model_from_checkpoint, get_preprocess_transform
 
 
