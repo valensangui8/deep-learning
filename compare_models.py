@@ -5,41 +5,9 @@ from typing import Dict
 import cv2
 import torch
 import torch.nn.functional as F
-import torchvision.transforms as transforms
 
 from models import MODEL_REGISTRY
-
-
-def get_preprocess_transform(model_name: str):
-    pretrained_models = ['resnet18', 'mobilenetv2', 'efficientnet']
-    if model_name in pretrained_models:
-        return transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Grayscale(num_output_channels=3),
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-    else:
-        return transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Grayscale(),
-            transforms.Resize((36, 36)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=(0.5,), std=(0.5,)),
-        ])
-
-
-def load_model(model_name: str, device: torch.device, checkpoint: str = None):
-    if checkpoint is None:
-        checkpoint = os.path.join(os.path.dirname(__file__), 'artifacts', model_name, 'best_model.pt')
-    if not os.path.exists(checkpoint):
-        raise FileNotFoundError(f"Checkpoint for '{model_name}' not found: {checkpoint}")
-    state = torch.load(checkpoint, map_location=device)
-    model = MODEL_REGISTRY[model_name]().to(device)
-    model.load_state_dict(state['model_state_dict'])
-    model.eval()
-    return model
+from utils import load_model_from_checkpoint, get_preprocess_transform
 
 
 def main():
@@ -59,11 +27,11 @@ def main():
     results: Dict[str, float] = {}
     for name in sorted(MODEL_REGISTRY.keys()):
         try:
-            model = load_model(name, device)
+            model = load_model_from_checkpoint(name, device, base_dir=os.path.dirname(__file__))
         except FileNotFoundError:
             results[name] = float('nan')
             continue
-        transform = get_preprocess_transform(name)
+        transform = get_preprocess_transform(name, use_augmentation=False)
         tensor = transform(image_rgb).unsqueeze(0).to(device)
         with torch.no_grad():
             logits = model(tensor)

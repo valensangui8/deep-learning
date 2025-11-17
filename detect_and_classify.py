@@ -5,41 +5,8 @@ from typing import List, Tuple
 import cv2
 import torch
 import torch.nn.functional as F
-import torchvision.transforms as transforms
 
-from models import MODEL_REGISTRY
-
-
-def load_model(checkpoint_path: str, device: torch.device, model_name: str):
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(
-            f"Checkpoint not found at: {checkpoint_path}. Run training first."
-        )
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    ModelClass = MODEL_REGISTRY[model_name]
-    model = ModelClass().to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model.eval()
-    return model
-
-def get_preprocess_transform(model_name: str) -> transforms.Compose:
-    pretrained_models = ['resnet18', 'mobilenetv2', 'efficientnet']
-    if model_name in pretrained_models:
-        return transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Grayscale(num_output_channels=3),
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-    else:
-        return transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Grayscale(),
-            transforms.Resize((36, 36)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=(0.5,), std=(0.5,)),
-        ])
+from utils import load_model_from_checkpoint, get_preprocess_transform
 
 
 def detect_faces(image_bgr, scale_factor: float = 1.1, min_neighbors: int = 5) -> List[Tuple[int, int, int, int]]:
@@ -52,7 +19,7 @@ def detect_faces(image_bgr, scale_factor: float = 1.1, min_neighbors: int = 5) -
 
 def classify_crops(image_bgr, boxes: List[Tuple[int, int, int, int]], model, device: torch.device,
                    model_name: str, threshold: float = 0.5) -> List[Tuple[Tuple[int, int, int, int], int, float]]:
-    transform = get_preprocess_transform(model_name)
+    transform = get_preprocess_transform(model_name, use_augmentation=False)
     results = []
     for (x, y, w, h) in boxes:
         crop = image_bgr[y:y + h, x:x + w]
@@ -96,9 +63,12 @@ def main():
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if args.checkpoint is None:
-        args.checkpoint = os.path.join(os.path.dirname(__file__), "artifacts", args.model, "best_model.pt")
-    model = load_model(args.checkpoint, device, args.model)
+    model = load_model_from_checkpoint(
+        model_name=args.model,
+        device=device,
+        checkpoint_path=args.checkpoint,
+        base_dir=os.path.dirname(__file__)
+    )
 
     image_bgr = cv2.imread(args.image)
     if image_bgr is None:

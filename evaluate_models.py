@@ -12,34 +12,8 @@ import numpy as np
 
 from models import MODEL_REGISTRY
 from load_data import get_data_loaders
+from utils import load_model_from_checkpoint, get_checkpoint_path, PRETRAINED_MODELS, evaluate_on_loader
 from typing import Set
-
-
-def load_checkpoint(model_name: str, device: torch.device):
-    checkpoint_path = os.path.join(os.path.dirname(__file__), 'artifacts', model_name, 'best_model.pt')
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint not found for {model_name}: {checkpoint_path}")
-    state = torch.load(checkpoint_path, map_location=device)
-    Model = MODEL_REGISTRY[model_name]
-    model = Model().to(device)
-    model.load_state_dict(state['model_state_dict'])
-    model.eval()
-    return model, checkpoint_path
-
-
-def evaluate_on_loader(model, dataloader, device: torch.device) -> Tuple[List[int], List[int]]:
-    all_preds: List[int] = []
-    all_labels: List[int] = []
-    with torch.no_grad():
-        for inputs, targets in dataloader:
-            inputs = inputs.to(device)
-            targets = targets.to(device)
-            logits = model(inputs)
-            probs = F.softmax(logits, dim=1)
-            preds = probs.argmax(dim=1)
-            all_preds.extend(preds.cpu().tolist())
-            all_labels.extend(targets.cpu().tolist())
-    return all_labels, all_preds
 
 
 def plot_bar(df: pd.DataFrame, metric: str, out_path: str):
@@ -117,11 +91,9 @@ def main():
     per_model_cm = {}
     bootstrap_rows: List[Dict] = []
 
-    pretrained_models: Set[str] = {'resnet18', 'mobilenetv2', 'efficientnet'}
-
     for idx, model_name in enumerate(models_to_eval, 1):
         print(f"[{idx}/{len(models_to_eval)}] Evaluating {model_name}...")
-        workers = args.pretrained_num_workers if model_name in pretrained_models else args.num_workers
+        workers = args.pretrained_num_workers if model_name in PRETRAINED_MODELS else args.num_workers
         _, _, test_loader, _ = get_data_loaders(
             train_dir=os.path.join(project_dir, 'train_images'),
             test_dir=os.path.join(project_dir, 'test_images'),
@@ -133,7 +105,8 @@ def main():
             use_augmentation=False,
         )
         try:
-            model, ckpt_path = load_checkpoint(model_name, device)
+            model = load_model_from_checkpoint(model_name, device, base_dir=project_dir)
+            ckpt_path = get_checkpoint_path(model_name, base_dir=project_dir)
         except FileNotFoundError as e:
             print(f"⚠️  {e}. Skipping...")
             continue

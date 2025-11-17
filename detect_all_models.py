@@ -6,8 +6,8 @@ import cv2
 import torch
 
 from models import MODEL_REGISTRY
+from utils import load_model_from_checkpoint
 from detect_and_classify import (
-    load_model,
     detect_faces,
     classify_crops,
     draw_annotations,
@@ -26,7 +26,7 @@ def run_detection_for_model(
 ) -> Dict[str, List]:
     os.makedirs(output_dir, exist_ok=True)
 
-    model = load_model(checkpoint, device, model_name)
+    model = load_model_from_checkpoint(model_name, device, checkpoint_path=checkpoint)
 
     image_bgr = cv2.imread(image_path)
     if image_bgr is None:

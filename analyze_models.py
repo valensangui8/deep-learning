@@ -122,6 +122,7 @@ def plot_metrics_comparison(df_summary: pd.DataFrame, out_dir: Path):
 
 def plot_model_parameters(df_summary: pd.DataFrame, out_dir: Path):
     """Plot model size (parameters) vs performance"""
+    from utils import load_model_from_checkpoint
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     param_counts = {}
     
@@ -130,10 +131,8 @@ def plot_model_parameters(df_summary: pd.DataFrame, out_dir: Path):
             # Try to load from checkpoint first (avoids downloading pretrained weights)
             checkpoint_path = Path("artifacts") / model_name / "best_model.pt"
             if checkpoint_path.exists():
-                checkpoint = torch.load(checkpoint_path, map_location=device)
-                ModelClass = MODEL_REGISTRY[model_name]
-                model = ModelClass().to(device)
-                model.load_state_dict(checkpoint['model_state_dict'])
+                model = load_model_from_checkpoint(model_name, device, 
+                                                   checkpoint_path=str(checkpoint_path))
                 param_counts[model_name] = count_parameters(model)
             else:
                 # Fallback: create new instance (may download for pretrained)
@@ -186,7 +185,7 @@ def plot_model_parameters(df_summary: pd.DataFrame, out_dir: Path):
 
 def plot_confusion_matrices_comparison(df_summary: pd.DataFrame, out_dir: Path):
     """Create a grid of confusion matrices for top models"""
-    from evaluate_models import load_checkpoint, evaluate_on_loader
+    from utils import load_model_from_checkpoint, evaluate_on_loader
     from load_data import get_data_loaders
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -230,7 +229,7 @@ def plot_confusion_matrices_comparison(df_summary: pd.DataFrame, out_dir: Path):
                 model_name=model_name,
                 use_augmentation=False,
             )
-            model, _ = load_checkpoint(model_name, device)
+            model = load_model_from_checkpoint(model_name, device, base_dir=project_dir)
             y_true, y_pred = evaluate_on_loader(model, test_loader, device)
             cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
             

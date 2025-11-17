@@ -10,6 +10,7 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 from load_data import get_data_loaders
 from models import MODEL_REGISTRY
+from utils import load_model_from_checkpoint
 
 
 def main():
@@ -31,17 +32,12 @@ def main():
         use_augmentation=False,
     )
 
-    checkpoint_path = os.path.join(base_dir, 'artifacts', args.model, 'best_model.pt')
-    if not os.path.exists(checkpoint_path):
-        print(f"Checkpoint not found at: {checkpoint_path}. Train the selected model first.")
+    try:
+        model = load_model_from_checkpoint(args.model, device, base_dir=base_dir)
+    except FileNotFoundError as e:
+        print(f"Checkpoint not found. Train the selected model first.")
         print(f"python {os.path.join(base_dir, 'train.py')} --model {args.model}")
         return
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-
-    ModelClass = MODEL_REGISTRY[args.model]
-    model = ModelClass().to(device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval()
 
     all_preds = []
     all_labels = []
