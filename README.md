@@ -1,322 +1,318 @@
 # Face (vs No-Face) Classification – Training, Detection and Model Zoo
 
-Este proyecto entrena clasificadores binarios (cara vs no-cara), permite detectar múltiples caras en imágenes completas y compararlas usando diferentes arquitecturas, incluyendo modelos preentrenados con fine-tuning.
+This project trains binary classifiers (face vs no-face), detects multiple faces in full images, and compares them using different architectures, including pretrained networks with fine-tuning.
 
-## Estructura del proyecto
+## Project Structure
 
 ```
 .
 ├── artifacts/
-│   ├── <modelo>/
-│   │   ├── best_model.pt        # checkpoint del mejor modelo para ese nombre
-│   │   └── history.json         # historia de loss/acc
-│   ├── detections_*.png         # imágenes anotadas de detección
-│   └── compare_*.txt            # resultados de comparaciones
-├── load_data.py                 # dataloaders, preprocesado y data augmentation
-├── models.py                    # todas las arquitecturas y registro de modelos
-├── net.py                       # CNN original (baseline antigua)
-├── train.py                     # script de entrenamiento/evaluación
-├── detect_and_classify.py       # detector+clasificador por imagen completa
-├── compare_models.py            # compara todos los modelos sobre una imagen
-├── train_images/                # dataset de entrenamiento (ImageFolder)
+│   ├── <model>/
+│   │   ├── best_model.pt        # best checkpoint for that model name
+│   │   └── history.json         # loss/acc history
+│   ├── detections_*.png         # annotated detection images
+│   └── compare_*.txt            # comparison outputs
+├── load_data.py                 # dataloaders, preprocessing and augmentation
+├── models.py                    # all architectures + model registry
+├── net.py                       # original (legacy) baseline CNN
+├── train.py                     # training/evaluation script
+├── detect_and_classify.py       # detector+classifier for full images
+├── compare_models.py            # compare every model on a single image
+├── train_images/                # training dataset (ImageFolder)
 │   ├── 0/ ... (noface)
 │   └── 1/ ... (face)
-└── test_images/                 # dataset de test (ImageFolder)
+└── test_images/                 # test dataset (ImageFolder)
     ├── 0/ ... (noface)
     └── 1/ ... (face)
 ```
 
-Formato de datos (ImageFolder):
-- `train_images/0` = no-cara, `train_images/1` = cara
-- `test_images/0` = no-cara, `test_images/1` = cara
+Data format (ImageFolder):
+- `train_images/0` = no-face, `train_images/1` = face
+- `test_images/0` = no-face, `test_images/1` = face
 
-## Requisitos
+## Requirements
 
 - Python 3.9+
 - PyTorch, TorchVision
 - OpenCV
-- scikit-learn (para métricas únicamente)
+- scikit-learn (metrics only)
 
-Instalación (pip):
+Installation (pip):
 ```bash
 pip install torch torchvision opencv-python scikit-learn
 ```
 
-## Modelos disponibles (MODEL_REGISTRY)
+## Available Models (MODEL_REGISTRY)
 
-Los modelos se referencian por nombre con `--model <nombre>`.
+Models are referenced by name with `--model <name>`.
 
-Modelos “pequeños” (entrada 36x36, escala de grises):
-- tiny: CNN mínima (8→16 canales, FC pequeña). Muy rápida, menos capacidad.
-- small: CNN pequeña (12→24 canales). Compromiso entre velocidad y capacidad.
-- baseline: CNN base original (16→32, 2 FC). Punto de referencia.
-- bn: CNN con BatchNorm. Suele estabilizar y acelerar el entrenamiento.
-- threeconv: CNN con 3 bloques conv y dos poolings. Más capacidad.
-- residual: CNN con bloques residuales simples. Mejora el flujo de gradientes.
-- improved: CNN mejorada (BatchNorm en todas las capas, 3 bloques, Dropout2D/1D). Generalmente más robusta.
-- attention: CNN con atención por canal (tipo SE). Mejora el foco en características relevantes.
+Small models (36x36 grayscale input):
+- tiny: minimal CNN (8→16 channels, small FC). Very fast, less capacity.
+- small: small CNN (12→24 channels). Balance between speed and capacity.
+- baseline: original base CNN (16→32, 2 FC). Reference point.
+- bn: CNN with BatchNorm. Typically stabilizes and speeds up training.
+- threeconv: CNN with 3 conv blocks + two poolings. Higher capacity.
+- residual: CNN with simple residual blocks. Better gradient flow.
+- improved: enhanced CNN (BatchNorm everywhere, 3 blocks, Dropout2D/1D). Generally more robust.
+- attention: CNN with channel attention (SE-like). Focuses on relevant features.
 
-Modelos preentrenados (entrada 224x224, RGB, normalización ImageNet):
-- resnet18: ResNet18 preentrenada (ImageNet) + fine-tuning. Buena precisión con coste moderado.
-- mobilenetv2: MobileNetV2 preentrenada. Muy eficiente en CPU/edge.
-- efficientnet: EfficientNet-B0 preentrenada. Excelente relación precisión/eficiencia.
+Pretrained models (224x224 RGB, ImageNet normalization):
+- resnet18: ImageNet-pretrained ResNet18 + fine-tuning. Strong accuracy with moderate cost.
+- mobilenetv2: Pretrained MobileNetV2. Very efficient on CPU/edge.
+- efficientnet: Pretrained EfficientNet-B0. Excellent accuracy/efficiency trade-off.
 
-Diferencias clave entre familias:
-- Tamaño de entrada: 36x36 (CNN pequeñas) vs 224x224 (preentrenados).
-- Preprocesado: Escala de grises + normalización (pequeños) vs RGB + normalización de ImageNet (preentrenados).
-- Capacidad/regularización: `improved`/`attention` usan BatchNorm y Dropout; `residual` usa atajos; preentrenados reutilizan características generales de ImageNet con fine-tuning.
+Key family differences:
+- Input size: 36x36 (small CNNs) vs 224x224 (pretrained).
+- Preprocessing: Grayscale + normalization (small) vs RGB + ImageNet normalization (pretrained).
+- Capacity/regularization: `improved`/`attention` use BatchNorm + Dropout; `residual` uses shortcuts; pretrained models reuse ImageNet features with fine-tuning.
 
-## Preprocesado y Data Augmentation
+## Preprocessing and Data Augmentation
 
-`load_data.py` adapta automáticamente el preprocesado según el modelo:
-- CNN pequeñas: 36x36, Grayscale, Normalización mean=0.5, std=0.5.
-- Preentrenados: 224x224, Grayscale→RGB (3 canales), Normalización ImageNet.
+`load_data.py` automatically adapts preprocessing per model:
+- Small CNNs: 36x36, grayscale, normalization mean=0.5, std=0.5.
+- Pretrained: 224x224, grayscale→RGB (3 channels), ImageNet normalization.
 
-Data augmentation (entrenamiento):
-- Preentrenados: Resize+RandomCrop(224), HorizontalFlip, Rotación, ColorJitter.
-- Pequeños: HorizontalFlip, Rotación ligera.
+Data augmentation (training):
+- Pretrained: Resize+RandomCrop(224), HorizontalFlip, Rotation, ColorJitter.
+- Small: HorizontalFlip, light Rotation.
 
-## Entrenamiento
+## Training
 
-Entrena un modelo y guarda el mejor checkpoint y la historia en `artifacts/<modelo>/`:
+Train a model and store the best checkpoint and history in `artifacts/<model>/`:
 ```bash
-# CNN pequeñas
+# Small CNNs
 python3 train.py --model baseline --epochs 10
 python3 train.py --model improved --epochs 10
 python3 train.py --model attention --epochs 10
 
-# Preentrenados (suelen requerir batch-size menor)
+# Pretrained (often need smaller batch sizes)
 python3 train.py --model resnet18 --epochs 10 --batch-size 32
 python3 train.py --model mobilenetv2 --epochs 10 --batch-size 32
 python3 train.py --model efficientnet --epochs 10 --batch-size 32
 ```
-Parámetros útiles:
+Useful parameters:
 - `--epochs`, `--batch-size`, `--lr`, `--num-workers`
 
-Durante el entrenamiento se imprime en cada época: loss/acc train y valid, y al final se evalúa el test con el mejor checkpoint.
+During training, each epoch prints train/valid loss & accuracy, and the final best checkpoint is evaluated on the test set.
 
-## Detección y clasificación en imágenes completas
+## Detection and Classification on Full Images
 
-Detecta caras (Haar cascade), recorta, preprocesa y clasifica cada cara con el modelo seleccionado. Genera una imagen anotada de salida.
+Detect faces (Haar cascade), crop, preprocess, and classify each face with the selected model. Produces an annotated output image.
 ```bash
-python3 detect_and_classify.py /ruta/a/imagen.jpg --model improved --show
-# Por defecto carga artifacts/<model>/best_model.pt
-# Ajustes del detector Haar
-python3 detect_and_classify.py /ruta/imagen.jpg --model resnet18 \
+python3 detect_and_classify.py /path/to/image.jpg --model improved --show
+# Loads artifacts/<model>/best_model.pt by default
+# Haar detector tuning
+python3 detect_and_classify.py /path/image.jpg --model resnet18 \
   --scale-factor 1.1 --min-neighbors 5 --threshold 0.5
 ```
-Salida:
-- Imagen anotada en `artifacts/detections_<nombre>.png` (o la ruta de `--save`).
-- Log con bbox, etiqueta y probabilidad por detección.
+Output:
+- Annotated image at `artifacts/detections_<name>.png` (or `--save` path).
+- Log containing bbox, label, and probability per detection.
 
-### Ejecutar detección con todos los modelos
+### Run Detection with All Models
 
-Para procesar una imagen con cada modelo entrenado y generar una imagen anotada por modelo:
+Process an image with every trained model and produce an annotated image per model:
 
 ```bash
-python3 detect_all_models.py /ruta/imagen.jpg --skip-missing
+python3 detect_all_models.py /path/image.jpg --skip-missing
 ```
 
-- Salva las imágenes en `artifacts/detections/<nombre_imagen>/<modelo>.png`.
-- Usa `--models baseline,improved,resnet18` para limitar la lista.
-- Ajusta `--threshold`, `--scale-factor`, `--min-neighbors` igual que en `detect_and_classify.py`.
-- Con `--skip-missing` omitirá modelos sin checkpoint, en lugar de fallar.
+- Saves outputs at `artifacts/detections/<image_name>/<model>.png`.
+- Use `--models baseline,improved,resnet18` to limit the list.
+- Adjust `--threshold`, `--scale-factor`, `--min-neighbors` like `detect_and_classify.py`.
+- With `--skip-missing`, models without checkpoints are skipped instead of failing.
 
-## Comparar modelos rápidamente sobre una imagen
+## Quickly Compare Models on a Single Image
 
-Calcula la probabilidad de “face” de TODOS los modelos registrados sobre una misma imagen (sin detección, a imagen completa). Útil para un sanity check y ranking rápido.
+Compute the “face” probability of every registered model on a single image (no detection, full image). Useful for a sanity check and quick ranking.
 ```bash
-python3 compare_models.py /ruta/a/imagen.jpg --save
+python3 compare_models.py /path/to/image.jpg --save
 ```
-- Imprime una tabla en consola.
-- Con `--save` genera `artifacts/compare_<nombre>.txt`.
+- Prints a console table.
+- `--save` writes `artifacts/compare_<name>.txt`.
 
-## Evaluación comparativa de modelos (métricas + gráficos)
+## Comparative Model Evaluation (metrics + plots)
 
-Para evaluar todos (o un subconjunto) de modelos sobre el set de test y obtener una tabla con accuracy, precision, recall y F1, además de gráficos comparativos:
+Evaluate all (or a subset of) models on the test set to get accuracy, precision, recall, and F1 plus comparison plots:
 
 ```bash
 python3 evaluate_models.py
-# o limitar a algunos
+# or limit it
 python3 evaluate_models.py --models baseline,improved,resnet18
 ```
 
-Salida en `artifacts/evaluation/`:
-- `summary.csv`: tabla con métricas por modelo.
-- `accuracy.png`, `f1.png`, `precision.png`, `recall.png`: gráficos de barras comparativos.
-- `cm_<modelo>.png`: matrices de confusión de los top-3 modelos por accuracy.
+Outputs in `artifacts/evaluation/`:
+- `summary.csv`: table with metrics per model.
+- `accuracy.png`, `f1.png`, `precision.png`, `recall.png`: bar plots.
+- `cm_<model>.png`: confusion matrices for the top-3 models by accuracy.
 
-### Intervalos de confianza con Bootstrapping
+### Confidence Intervals via Bootstrapping
 
-Puedes estimar la incertidumbre de las métricas con bootstrapping (remuestreo con reemplazo sobre el set de test):
+Estimate uncertainty with bootstrapping (resampling the test set with replacement):
 
 ```bash
-# 1000 remuestreos y CI del 95%
+# 1000 resamples and 95% CI
 python3 evaluate_models.py --bootstrap 1000 --ci 95
 ```
 
-Archivos adicionales:
-- `bootstrap_summary.csv`: media, desvío estándar y CI [low, high] por modelo y métrica.
-- `bootstrap_<modelo>.csv`: distribución bootstrap por métrica para cada modelo.
-- `<metric>_violin.png`: violines comparando la distribución bootstrap entre modelos.
+Extra files:
+- `bootstrap_summary.csv`: mean, std, CI [low, high] per model/metric.
+- `bootstrap_<model>.csv`: bootstrap distributions per metric.
+- `<metric>_violin.png`: violin plots comparing bootstrap distributions.
 
-## Guía rápida para principiantes
+## Quick Start Guide
 
-1) Instalar dependencias
+1) Install dependencies
 ```bash
-# En entornos sin GUI (Jupyter/servidores) usa headless:
+# Headless environments (Jupyter/servers)
 pip install torch torchvision opencv-python-headless scikit-learn
-# En entornos con GUI local:
+# Local environments with GUI
 pip install torch torchvision opencv-python scikit-learn
 ```
 
-2) Preparar datos
-- Crea carpetas `train_images/0`, `train_images/1`, `test_images/0`, `test_images/1`.
-- Coloca imágenes de “no-cara” en `0/` y “cara” en `1/`.
+2) Prepare data
+- Create `train_images/0`, `train_images/1`, `test_images/0`, `test_images/1`.
+- Place “no-face” images inside `0/` and “face” images inside `1/`.
 
-3) Entrenar
+3) Train
 ```bash
-# Todos los modelos (recomendado si quieres compararlos)
+# Every model (recommended if you want comparisons)
 python3 train_all.py
 
-# Un modelo específico (más rápido)
+# Single model (faster)
 python3 train.py --model improved --epochs 10
 ```
-Salida: `artifacts/<modelo>/best_model.pt` y `history.json`.
+Outputs: `artifacts/<model>/best_model.pt` and `history.json`.
 
-4) Probar detección en una imagen
+4) Test detection on an image
 ```bash
-python3 detect_and_classify.py /ruta/imagen.jpg --model improved --show
-# Si estás en servidor/Jupyter, omite --show y revisa artifacts/detections_<nombre>.png
+python3 detect_and_classify.py /path/image.jpg --model improved --show
+# On servers/Jupyter omit --show and check artifacts/detections_<name>.png
 ```
 
-5) Probar con todos los modelos a la vez
+5) Run every model at once
 ```bash
-python3 detect_all_models.py /ruta/imagen.jpg --skip-missing
+python3 detect_all_models.py /path/image.jpg --skip-missing
 ```
-Salida: una imagen anotada por modelo en `artifacts/detections/<nombre_imagen>/`.
+Outputs: one annotated image per model in `artifacts/detections/<image_name>/`.
 
-6) Comparar “probabilidad de cara” sin detección (imagen completa)
+6) Compare “face probability” without detection (full image)
 ```bash
-python3 compare_models.py /ruta/imagen.jpg --save
+python3 compare_models.py /path/image.jpg --save
 ```
 
-## ¿Qué significa el “porcentaje” que ves en las imágenes?
-- Es la probabilidad que el modelo asigna a la clase “face” (cara) para cada recorte detectado.
-- Si el valor es mayor o igual al umbral (`--threshold`, por defecto 0.5), la etiqueta será “face”; si no, “noface”.
-- Puedes elevar el umbral (por ejemplo 0.6–0.7) si prefieres menos falsos positivos, a costa de perder algunas caras verdaderas (recall menor).
+## What does the “percentage” in the images mean?
+- It is the probability assigned to class “face” for each detected crop.
+- If the value is greater than or equal to the threshold (`--threshold`, default 0.5) the label is “face”; otherwise “noface”.
+- Increase the threshold (0.6–0.7) for fewer false positives at the cost of missing some true faces (lower recall).
 
-## Diferencias entre modelos (alto nivel)
+## Model Differences (High Level)
 
-- Modelos pequeños (entrada 36x36, escala de grises):
-  - `tiny` y `small`: muy rápidos y ligeros; menor capacidad.
-  - `baseline`: referencia original, desempeño decente.
-  - `bn`: añade BatchNorm; entreno más estable.
-  - `threeconv`: un poco más profundo; suele mejorar.
-  - `residual`: atajos residuales; mejor flujo del gradiente.
-  - `improved`: mejor práctica (BatchNorm+Dropout2D/1D); robusto.
-  - `attention`: añade atención por canal (tipo SE); puede enfocarse mejor en rasgos útiles.
+- Small models (36x36 grayscale input):
+  - `tiny` and `small`: extremely fast and light; lower capacity.
+  - `baseline`: original reference, decent performance.
+  - `bn`: adds BatchNorm; training is more stable.
+  - `threeconv`: slightly deeper; usually better.
+  - `residual`: residual shortcuts; improved gradient flow.
+  - `improved`: best practices (BatchNorm+Dropout2D/1D); robust.
+  - `attention`: channel attention (SE-style); focuses on useful cues.
 
-- Preentrenados (entrada 224x224, RGB, normalización ImageNet):
-  - `resnet18`: buen equilibrio precisión/tiempo.
-  - `mobilenetv2`: muy eficiente en CPU/edge.
-  - `efficientnet`: gran precisión/eficiencia, algo más pesado.
+- Pretrained (224x224 RGB, ImageNet normalization):
+  - `resnet18`: strong accuracy/time balance.
+  - `mobilenetv2`: very efficient for CPU/edge.
+  - `efficientnet`: high accuracy/efficiency, slightly heavier.
 
-Reglas generales:
-- Si tu dataset es pequeño o variado, los preentrenados suelen generalizar mejor.
-- Si necesitas velocidad y poco consumo, usa `mobilenetv2` o `tiny/small`.
-- Si quieres un “caballo de batalla” sin preentrenamiento, prueba `improved` o `residual`.
+Rules of thumb:
+- Small or diverse datasets benefit from pretrained models.
+- Need speed and low resource usage? Choose `mobilenetv2` or `tiny/small`.
+- Want a reliable non-pretrained option? Try `improved` or `residual`.
 
-## ¿Cómo comparar modelos de forma justa?
+## How to Compare Models Fairly
 
-- Mismo conjunto de test para todos.
-- Mismo umbral (`--threshold`) si comparas “porcentaje de cara”.
-- Métricas recomendadas: accuracy, precision, recall, F1.
-- Opciones:
-  - Usar `test.py` para una evaluación y matriz de confusión (un modelo a la vez).
-  - Extender `compare_models.py` para iterar sobre `test_images/` y calcular métricas globales por modelo (sugerido para informes).
+- Use the same test set for every model.
+- Keep the same threshold (`--threshold`) when comparing “face probability”.
+- Recommended metrics: accuracy, precision, recall, F1.
+- Options:
+  - Use `test.py` for evaluation + confusion matrix (one model at a time).
+  - Extend `compare_models.py` to iterate over `test_images/` and compute global metrics per model (suggested for reports).
 
-Idea rápida (no implementada aún):
-- Script que recorra `test_images/`, ejecute cada modelo y compute accuracy/F1 por modelo, generando una tabla CSV.
+Quick idea (not yet implemented):
+- Script that loops through `test_images/`, runs each model, and stores accuracy/F1 per model into a CSV table.
 
-## Preguntas frecuentes / Troubleshooting
+## FAQ / Troubleshooting
 
-- “No encuentro cv2 (OpenCV)”
-  - Instala: `pip install opencv-python-headless` (servidor/Jupyter) o `pip install opencv-python` (local con GUI).
+- “cv2 (OpenCV) not found”
+  - Install `pip install opencv-python-headless` (server/Jupyter) or `pip install opencv-python` (local with GUI).
 
-- “Los modelos preentrenados fallan con errores de ‘shared memory (shm)’”
-  - Ejecuta entrenos con `num_workers=0` para preentrenados. `train_all.py` ya lo hace por defecto.
-  - También puedes bajar `--batch-size` si hay poco RAM/GPU.
+- “Pretrained models crash with shared memory (shm) errors”
+  - Train with `num_workers=0` for pretrained models (default in `train_all.py`).
+  - Lower `--batch-size` if RAM/GPU is limited.
 
-- “No veo ventana con la imagen”
-  - En servidores/Jupyter no hay GUI. Omite `--show` y revisa la imagen guardada en `artifacts/`.
+- “No image window appears”
+  - Servers/Jupyter have no GUI. Skip `--show` and inspect the saved image in `artifacts/`.
 
-- “No tengo checkpoint”
-  - Entrena primero: `python3 train.py --model baseline` (u otro).
+- “No checkpoint found”
+  - Train first: `python3 train.py --model baseline` (or any other).
 
-- “¿Cómo ajusto sensibilidad?”
-  - Sube el umbral (`--threshold 0.6` o `0.7`) para menos falsos positivos.
-  - Ajusta detector Haar con `--scale-factor` y `--min-neighbors`.
+- “How do I adjust sensitivity?”
+  - Raise `--threshold` (0.6 or 0.7) to reduce false positives.
+  - Tune Haar detector via `--scale-factor` and `--min-neighbors`.
 
-## Glosario breve
-- “Detección”: encontrar dónde hay una cara (bounding box) en una imagen.
-- “Clasificación”: decidir si un recorte es “cara” o “no-cara”.
-- “Preentrenado”: el modelo ya aprendió rasgos generales de millones de imágenes (ImageNet) y luego lo ajustamos a tu tarea (fine-tuning).
-- “Data augmentation”: transformaciones de imagen (rotar, recortar, voltear) para hacer el modelo más robusto.
+## Glossary
+- Detection: find where a face is (bounding box) in an image.
+- Classification: decide whether a crop is “face” or “noface”.
+- Pretrained: model learned generic features from millions of images (ImageNet) before fine-tuning on this task.
+- Data augmentation: image transformations (rotate, crop, flip) to make the model more robust.
 
-## Comandos clave (chuleta)
+## Cheat Sheet Commands
 ```bash
-# Entrenar todo
+# Train everything
 python3 train_all.py
 
-# Entrenar uno
+# Train a single model
 python3 train.py --model improved --epochs 10
 
-# Detección con un modelo
-python3 detect_and_classify.py /ruta/imagen.jpg --model resnet18 --threshold 0.6
+# Detection with one model
+python3 detect_and_classify.py /path/image.jpg --model resnet18 --threshold 0.6
 
-# Detección con todos los modelos
-python3 detect_all_models.py /ruta/imagen.jpg --skip-missing
+# Detection with every model
+python3 detect_all_models.py /path/image.jpg --skip-missing
 
-# Comparar probabilidades sin detección
-python3 compare_models.py /ruta/imagen.jpg --save
+# Compare probabilities without detection
+python3 compare_models.py /path/image.jpg --save
 ```
 
-## Evaluación más completa (sugerida)
+## Suggested Extended Evaluation
 
-- Usa `test.py` para métricas y matriz de confusión sobre el conjunto de test (para un modelo a la vez).
-- Extiende `compare_models.py` para iterar sobre `test_images/` y producir una tabla agregada con accuracy/precision/recall/F1 por modelo.
+- Use `test.py` for metrics and confusion matrix on the test set (one model at a time).
+- Extend `compare_models.py` to loop over `test_images/` and generate an aggregated table with accuracy/precision/recall/F1 per model.
 
-## Recomendaciones prácticas
+## Practical Tips
 
-- Balanceo de clases: Si el dataset está desbalanceado, puedes:
-  - Usar `WeightedRandomSampler` (integrarlo en `load_data.py`).
-  - Ajustar `CrossEntropyLoss` con `weight` por clase.
-- Umbral de decisión: Ajusta `--threshold` para priorizar recall o precision según tu objetivo.
-- Early stopping y schedulers: Puedes agregar un scheduler (Cosine/OneCycle) y early stopping para los preentrenados.
-- Recursos: Preentrenados consumen más memoria; baja `--batch-size` si ves OOM.
+- Class balance: if the dataset is imbalanced you can:
+  - Add a `WeightedRandomSampler` in `load_data.py`.
+  - Use class weights in `CrossEntropyLoss`.
+- Decision threshold: tweak `--threshold` to prioritize recall vs precision.
+- Early stopping & schedulers: consider schedulers (Cosine/OneCycle) and early stopping for pretrained runs.
+- Resources: pretrained models consume more memory; reduce `--batch-size` if you hit OOM.
 
-## Dependencias y notas
+## Dependencies and Notes
 
-- Instalar dependencias principales:
+- Install the main dependencies:
 ```bash
 pip install torch torchvision opencv-python scikit-learn
 ```
-- scikit-learn: El paquete a instalar es `scikit-learn`; el import en código es `from sklearn ...`.
-- OpenCV Haar cascade está incluido en `cv2.data.haarcascades`.
+- scikit-learn: install `scikit-learn` and import via `from sklearn ...`.
+- OpenCV Haar cascade is bundled in `cv2.data.haarcascades`.
 
-## Preguntas frecuentes
+## FAQ
 
-- No abre mi imagen con `detect_and_classify.py`:
-  - Verifica la ruta. Si usas ruta absoluta, no olvides comillas si tiene espacios.
-  - Ejemplo correcto: `python3 detect_and_classify.py "~/Pictures/foto.jpg" --model baseline`
-- No hay checkpoint:
-  - Debes entrenar primero: `python3 train.py --model baseline`
-- ¿Puedo usar video/webcam?
-  - El flujo está listo para imagen. Se puede extender con captura de frames y aplicar el mismo pipeline (puedo añadirlo si lo necesitas).
+- The image will not open in `detect_and_classify.py`:
+  - Double-check the path. Quote it if it contains spaces.
+  - Example: `python3 detect_and_classify.py "~/Pictures/photo.jpg" --model baseline`
+- Missing checkpoint:
+  - Train first: `python3 train.py --model baseline`
+- Can I use video/webcam?
+  - The pipeline is built for images. You can extend it by capturing frames and applying the same process (happy to add it if needed).
 
 ---
-
-Si quieres, puedo añadir un script de evaluación sobre `test_images/` que produzca una tabla comparando todas las métricas por modelo y un gráfico de barras con accuracy/F1.
-
-

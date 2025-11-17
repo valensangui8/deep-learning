@@ -13,7 +13,7 @@ from models import MODEL_REGISTRY
 def load_model(checkpoint_path: str, device: torch.device, model_name: str):
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(
-            f"Checkpoint no encontrado en: {checkpoint_path}. Ejecuta primero el entrenamiento."
+            f"Checkpoint not found at: {checkpoint_path}. Run training first."
         )
     checkpoint = torch.load(checkpoint_path, map_location=device)
     ModelClass = MODEL_REGISTRY[model_name]
@@ -22,21 +22,17 @@ def load_model(checkpoint_path: str, device: torch.device, model_name: str):
     model.eval()
     return model
 
-
 def get_preprocess_transform(model_name: str) -> transforms.Compose:
-    """Get preprocessing transform based on model type"""
     pretrained_models = ['resnet18', 'mobilenetv2', 'efficientnet']
     if model_name in pretrained_models:
-        # Pretrained models: 224x224 RGB with ImageNet normalization
         return transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Grayscale(num_output_channels=3),  # Convert to RGB
+            transforms.Grayscale(num_output_channels=3),
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
     else:
-        # Small CNNs: 36x36 grayscale
         return transforms.Compose([
             transforms.ToPILImage(),
             transforms.Grayscale(),
@@ -63,11 +59,10 @@ def classify_crops(image_bgr, boxes: List[Tuple[int, int, int, int]], model, dev
         if crop.size == 0:
             continue
         crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-        tensor = transform(crop_rgb).unsqueeze(0).to(device)  # (1,1,36,36)
+        tensor = transform(crop_rgb).unsqueeze(0).to(device)
         with torch.no_grad():
             logits = model(tensor)
             probs = F.softmax(logits, dim=1)[0]
-            # clases: ('noface', 'face') -> índice 1 es 'face'
             face_prob = float(probs[1].item())
             pred = 1 if face_prob >= threshold else 0
         results.append(((x, y, w, h), pred, face_prob))
@@ -87,35 +82,33 @@ def draw_annotations(image_bgr, results: List[Tuple[Tuple[int, int, int, int], i
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Detectar caras y clasificarlas usando un modelo elegido")
-    parser.add_argument("image", type=str, help="Ruta a la imagen de entrada")
+    parser = argparse.ArgumentParser(description="Detect faces and classify them with the selected model")
+    parser.add_argument("image", type=str, help="Path to the input image")
     parser.add_argument("--model", type=str, default="baseline", choices=sorted(MODEL_REGISTRY.keys()),
-                        help="Nombre del modelo a usar")
+                        help="Name of the model to use")
     parser.add_argument("--checkpoint", type=str, default=None,
-                        help="Ruta al checkpoint del modelo (por defecto usa artifacts/<model>/best_model.pt)")
-    parser.add_argument("--scale-factor", type=float, default=1.1, help="Parámetro scaleFactor del detector Haar")
-    parser.add_argument("--min-neighbors", type=int, default=5, help="Parámetro minNeighbors del detector Haar")
-    parser.add_argument("--threshold", type=float, default=0.5, help="Umbral de probabilidad para 'face'")
-    parser.add_argument("--save", type=str, default=None, help="Ruta para guardar la imagen anotada")
-    parser.add_argument("--show", action="store_true", help="Mostrar la imagen anotada en una ventana")
+                        help="Path to the model checkpoint (defaults to artifacts/<model>/best_model.pt)")
+    parser.add_argument("--scale-factor", type=float, default=1.1, help="scaleFactor parameter for the Haar detector")
+    parser.add_argument("--min-neighbors", type=int, default=5, help="minNeighbors parameter for the Haar detector")
+    parser.add_argument("--threshold", type=float, default=0.5, help="Probability threshold for 'face'")
+    parser.add_argument("--save", type=str, default=None, help="Path to save the annotated image")
+    parser.add_argument("--show", action="store_true", help="Show the annotated image in a window")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # Determinar ruta por defecto del checkpoint por modelo
     if args.checkpoint is None:
         args.checkpoint = os.path.join(os.path.dirname(__file__), "artifacts", args.model, "best_model.pt")
     model = load_model(args.checkpoint, device, args.model)
 
     image_bgr = cv2.imread(args.image)
     if image_bgr is None:
-        raise FileNotFoundError(f"No se pudo abrir la imagen: {args.image}")
+        raise FileNotFoundError(f"Could not open image: {args.image}")
 
     boxes = detect_faces(image_bgr, scale_factor=args.scale_factor, min_neighbors=args.min_neighbors)
     results = classify_crops(image_bgr, boxes, model, device, args.model, threshold=args.threshold)
 
     annotated = draw_annotations(image_bgr.copy(), results)
 
-    # Guardar por defecto en artifacts si no se especifica
     if args.save is None:
         artifacts_dir = os.path.join(os.path.dirname(__file__), "artifacts")
         os.makedirs(artifacts_dir, exist_ok=True)
@@ -123,7 +116,7 @@ def main():
         args.save = os.path.join(artifacts_dir, f"detections_{base}.png")
 
     cv2.imwrite(args.save, annotated)
-    print(f"Resultados: {len(results)} detecciones. Imagen guardada en: {args.save}")
+    print(f"Results: {len(results)} detections. Image saved to: {args.save}")
     for (x, y, w, h), pred, prob in results:
         print(f"bbox=({x},{y},{w},{h}) label={'face' if pred==1 else 'noface'} prob={prob:.3f}")
 
@@ -138,5 +131,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 

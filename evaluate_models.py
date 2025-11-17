@@ -18,7 +18,7 @@ from typing import Set
 def load_checkpoint(model_name: str, device: torch.device):
     checkpoint_path = os.path.join(os.path.dirname(__file__), 'artifacts', model_name, 'best_model.pt')
     if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint no encontrado para {model_name}: {checkpoint_path}")
+        raise FileNotFoundError(f"Checkpoint not found for {model_name}: {checkpoint_path}")
     state = torch.load(checkpoint_path, map_location=device)
     Model = MODEL_REGISTRY[model_name]
     model = Model().to(device)
@@ -88,13 +88,13 @@ def bootstrap_metrics(y_true: np.ndarray, y_pred: np.ndarray, num_bootstrap: int
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Evaluar y comparar métricas de todos los modelos')
-    parser.add_argument('--models', type=str, default='all', help="Lista separada por comas o 'all'")
-    parser.add_argument('--save-dir', type=str, default=None, help='Directorio de salida para resultados/plots')
-    parser.add_argument('--bootstrap', type=int, default=0, help='Número de remuestreos bootstrap (0 para desactivar)')
-    parser.add_argument('--ci', type=float, default=95.0, help='Intervalo de confianza en %% (ej. 95)')
-    parser.add_argument('--num-workers', type=int, default=2, help='Workers para CNNs pequeñas')
-    parser.add_argument('--pretrained-num-workers', type=int, default=0, help='Workers para modelos preentrenados')
+    parser = argparse.ArgumentParser(description='Evaluate and compare metrics for all models')
+    parser.add_argument('--models', type=str, default='all', help="Comma-separated list or 'all'")
+    parser.add_argument('--save-dir', type=str, default=None, help='Output directory for results/plots')
+    parser.add_argument('--bootstrap', type=int, default=0, help='Number of bootstrap resamples (0 disables)')
+    parser.add_argument('--ci', type=float, default=95.0, help='Confidence interval in %% (e.g. 95)')
+    parser.add_argument('--num-workers', type=int, default=2, help='Workers for small CNNs')
+    parser.add_argument('--pretrained-num-workers', type=int, default=0, help='Workers for pretrained models')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -109,7 +109,7 @@ def main():
         requested = [m.strip() for m in args.models.split(',') if m.strip()]
         unknown = [m for m in requested if m not in available]
         if unknown:
-            raise ValueError(f"Modelos desconocidos: {unknown}\nDisponibles: {available}")
+            raise ValueError(f"Unknown models: {unknown}\nAvailable: {available}")
         models_to_eval = requested
 
     rows: List[Dict] = []
@@ -120,8 +120,7 @@ def main():
     pretrained_models: Set[str] = {'resnet18', 'mobilenetv2', 'efficientnet'}
 
     for idx, model_name in enumerate(models_to_eval, 1):
-        print(f"[{idx}/{len(models_to_eval)}] Evaluando {model_name}...")
-        # Get dataloaders with correct preprocessing for this model
+        print(f"[{idx}/{len(models_to_eval)}] Evaluating {model_name}...")
         workers = args.pretrained_num_workers if model_name in pretrained_models else args.num_workers
         _, _, test_loader, _ = get_data_loaders(
             train_dir=os.path.join(project_dir, 'train_images'),
@@ -136,7 +135,7 @@ def main():
         try:
             model, ckpt_path = load_checkpoint(model_name, device)
         except FileNotFoundError as e:
-            print(f"⚠️  {e}. Omitiendo...")
+            print(f"⚠️  {e}. Skipping...")
             continue
 
         y_true, y_pred = evaluate_on_loader(model, test_loader, device)
@@ -160,7 +159,6 @@ def main():
         rows.append(row)
         print(f"   acc={acc:.4f} prec={precision:.4f} rec={recall:.4f} f1={f1:.4f}")
 
-        # Bootstrap (optional)
         if args.bootstrap and len(y_true_np) > 0:
             boot = bootstrap_metrics(y_true_np, y_pred_np, args.bootstrap, random_state=42)
             alpha = (100 - args.ci) / 2.0
@@ -175,7 +173,6 @@ def main():
                     'ci_low': float(np.percentile(arr, low_q)),
                     'ci_high': float(np.percentile(arr, high_q)),
                 })
-            # Save per-model distributions
             boot_df = pd.DataFrame({
                 'accuracy': boot['accuracy'],
                 'precision': boot['precision'],
@@ -185,35 +182,32 @@ def main():
             boot_df.to_csv(os.path.join(out_dir, f'bootstrap_{model_name}.csv'), index=False)
 
     if not rows:
-        print("No se evaluó ningún modelo. Revisa que existan checkpoints en artifacts/<modelo>/best_model.pt")
+        print("No model was evaluated. Check that checkpoints exist at artifacts/<model>/best_model.pt")
         return
 
     df = pd.DataFrame(rows).sort_values(by='accuracy', ascending=False)
     csv_path = os.path.join(out_dir, 'summary.csv')
     df.to_csv(csv_path, index=False)
-    print(f"\nResumen guardado en: {csv_path}")
+    print(f"\nSummary saved to: {csv_path}")
     print(df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
-    # Plots
     plot_bar(df, 'accuracy', os.path.join(out_dir, 'accuracy.png'))
     plot_bar(df, 'f1', os.path.join(out_dir, 'f1.png'))
     plot_bar(df, 'precision', os.path.join(out_dir, 'precision.png'))
     plot_bar(df, 'recall', os.path.join(out_dir, 'recall.png'))
-    print(f"Gráficos guardados en: {out_dir}")
+    print(f"Plots saved to: {out_dir}")
 
-    # Confusion matrices per top-3 models by acc
     top_models = df['model'].head(min(3, len(df))).tolist()
     for m in top_models:
         cm = per_model_cm[m]
         out = os.path.join(out_dir, f'cm_{m}.png')
         plot_confusion(cm, classes, out, title=f'Confusion Matrix - {m}')
 
-    # Bootstrap summary and violin plots (if requested)
     if bootstrap_rows:
         boot_summary = pd.DataFrame(bootstrap_rows)
         boot_csv = os.path.join(out_dir, 'bootstrap_summary.csv')
         boot_summary.to_csv(boot_csv, index=False)
-        print(f"Resumen bootstrap guardado en: {boot_csv}")
+        print(f"Bootstrap summary saved to: {boot_csv}")
 
         for metric in ['accuracy', 'precision', 'recall', 'f1']:
             plt.figure(figsize=(10, 5))
@@ -237,5 +231,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 

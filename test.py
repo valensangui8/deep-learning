@@ -33,7 +33,7 @@ def main():
 
     checkpoint_path = os.path.join(base_dir, 'artifacts', args.model, 'best_model.pt')
     if not os.path.exists(checkpoint_path):
-        print(f"Checkpoint no encontrado en: {checkpoint_path}. Entrena primero el modelo seleccionado.")
+        print(f"Checkpoint not found at: {checkpoint_path}. Train the selected model first.")
         print(f"python {os.path.join(base_dir, 'train.py')} --model {args.model}")
         return
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -60,7 +60,7 @@ def main():
             all_labels.extend(labels.cpu().tolist())
 
     acc = correct / total
-    print(f"Aciertos: {correct} de {total} ({acc*100:.2f}%)")
+    print(f"Correct: {correct} of {total} ({acc*100:.2f}%)")
 
     cm = confusion_matrix(all_labels, all_preds)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=list(classes))
@@ -71,13 +71,11 @@ def main():
     plt.savefig(os.path.join(artifacts_dir, 'confusion_matrix.png'), bbox_inches='tight')
     plt.close()
 
-    # Visualize some predictions
     samples_to_show = 10
     shown = 0
     fig, axes = plt.subplots(3, 4, figsize=(10, 7))
     axes = axes.ravel()
 
-    # Create a small iterable of samples
     for images, labels in test_loader:
         with torch.no_grad():
             outputs = model(images.to(device))
@@ -91,10 +89,7 @@ def main():
                 img = img_t.squeeze(0).numpy() * 0.5 + 0.5
                 axes[shown].imshow(img, cmap='gray')
             else:
-                # For RGB pretrained models (ImageNet normalization), unnormalize for display
                 img = img_t.clone().cpu().numpy()
-                # rough unnormalize for visualization
-                # mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]
                 img[0] = img[0] * 0.229 + 0.485
                 img[1] = img[1] * 0.224 + 0.456
                 img[2] = img[2] * 0.225 + 0.406
@@ -120,4 +115,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

@@ -59,13 +59,13 @@ def evaluate(model, dataloader, criterion, device):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Entrenar modelos CNN para detección de cara/no-cara')
+    parser = argparse.ArgumentParser(description='Train CNN models for face/no-face detection')
     parser.add_argument('--model', type=str, default='baseline', choices=sorted(MODEL_REGISTRY.keys()),
-                        help='Modelo a entrenar')
-    parser.add_argument('--epochs', type=int, default=10, help='Número de épocas')
-    parser.add_argument('--batch-size', type=int, default=64, help='Tamaño de batch')
+                        help='Model to train')
+    parser.add_argument('--epochs', type=int, default=10, help='Number of epochs')
+    parser.add_argument('--batch-size', type=int, default=64, help='Batch size')
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
-    parser.add_argument('--num-workers', type=int, default=2, help='Workers para DataLoader')
+    parser.add_argument('--num-workers', type=int, default=2, help='DataLoader workers')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -78,7 +78,7 @@ def main():
         valid_size=0.2,
         num_workers=args.num_workers,
         model_name=args.model,
-        use_augmentation=True,  # Enable data augmentation for better training
+        use_augmentation=True,
     )
 
     ModelClass = MODEL_REGISTRY[args.model]
@@ -120,7 +120,6 @@ def main():
     with open(history_path, 'w') as f:
         json.dump(history, f, indent=2)
 
-    # Final test eval on best checkpoint
     checkpoint = torch.load(model_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     test_loss, test_acc = evaluate(model, test_loader, criterion, device)
@@ -129,5 +128,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-

@@ -30,7 +30,7 @@ def run_detection_for_model(
 
     image_bgr = cv2.imread(image_path)
     if image_bgr is None:
-        raise FileNotFoundError(f"No se pudo abrir la imagen: {image_path}")
+        raise FileNotFoundError(f"Could not open image: {image_path}")
 
     boxes = detect_faces(image_bgr, scale_factor=scale_factor, min_neighbors=min_neighbors)
     results = classify_crops(image_bgr, boxes, model, device, model_name, threshold=threshold)
@@ -49,42 +49,42 @@ def run_detection_for_model(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Ejecutar detección con todos los modelos entrenados")
-    parser.add_argument("image", type=str, help="Ruta a la imagen de entrada")
+    parser = argparse.ArgumentParser(description="Run detection with all trained models")
+    parser.add_argument("image", type=str, help="Path to the input image")
     parser.add_argument(
         "--models",
         type=str,
         default="all",
-        help="Lista separada por comas de modelos a usar o 'all' para todos",
+        help="Comma-separated list of models to use or 'all' for every model",
     )
     parser.add_argument(
         "--scale-factor",
         type=float,
         default=1.1,
-        help="Parámetro scaleFactor del detector Haar",
+        help="scaleFactor parameter for the Haar detector",
     )
     parser.add_argument(
         "--min-neighbors",
         type=int,
         default=5,
-        help="Parámetro minNeighbors del detector Haar",
+        help="minNeighbors parameter for the Haar detector",
     )
     parser.add_argument(
         "--threshold",
         type=float,
         default=0.5,
-        help="Umbral de probabilidad para clasificar como 'face'",
+        help="Probability threshold to classify as 'face'",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
-        help="Directorio base para guardar las imágenes anotadas (por defecto artifacts/detections/<imagen>)",
+        help="Base directory to save annotated images (defaults to artifacts/detections/<image>)",
     )
     parser.add_argument(
         "--skip-missing",
         action="store_true",
-        help="Omitir modelos sin checkpoint en lugar de detenerse con error",
+        help="Skip models without a checkpoint instead of stopping with an error",
     )
     args = parser.parse_args()
 
@@ -96,7 +96,7 @@ def main():
         requested = [m.strip() for m in args.models.split(",") if m.strip()]
         unknown = [m for m in requested if m not in MODEL_REGISTRY]
         if unknown:
-            raise ValueError(f"Modelos desconocidos: {unknown}")
+            raise ValueError(f"Unknown models: {unknown}")
         model_names = requested
 
     image_base = os.path.splitext(os.path.basename(args.image))[0]
@@ -118,14 +118,14 @@ def main():
             "best_model.pt",
         )
         if not os.path.exists(checkpoint):
-            msg = f"Checkpoint no encontrado para {model_name}: {checkpoint}"
+            msg = f"Checkpoint not found for {model_name}: {checkpoint}"
             if args.skip_missing:
-                print(f"⚠️  {msg}. Omitiendo...")
+                print(f"⚠️  {msg}. Skipping...")
                 failures.append(model_name)
                 continue
             raise FileNotFoundError(msg)
 
-        print(f"\n==> Ejecutando detección con modelo: {model_name}")
+        print(f"\n==> Running detection with model: {model_name}")
         try:
             summary = run_detection_for_model(
                 image_path=args.image,
@@ -139,31 +139,30 @@ def main():
             )
             summaries.append(summary)
             print(
-                f"   Detecciones: {summary['num_detections']} | salida: {summary['output_path']}"
+                f"   Detections: {summary['num_detections']} | output: {summary['output_path']}"
             )
         except Exception as exc:
             failures.append(model_name)
             if args.skip_missing:
-                print(f"⚠️  Error con {model_name}: {exc}. Omitiendo...")
+                print(f"⚠️  Error with {model_name}: {exc}. Skipping...")
                 continue
             raise
 
-    print("\nResumen:")
+    print("\nSummary:")
     for summary in summaries:
         print(
-            f"- {summary['model']}: {summary['num_detections']} detecciones "
-            f"(imagen -> {summary['output_path']})"
+            f"- {summary['model']}: {summary['num_detections']} detections "
+            f"(image -> {summary['output_path']})"
         )
 
     if failures:
-        print("\nModelos con problemas u omitidos:")
+        print("\nModels with issues or skipped:")
         for model_name in failures:
             print(f"- {model_name}")
     else:
-        print("\nTodos los modelos procesaron la imagen correctamente.")
+        print("\nAll models processed the image successfully.")
 
 
 if __name__ == "__main__":
     main()
-
 

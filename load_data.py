@@ -17,31 +17,18 @@ def get_data_loaders(
     model_name: str = 'baseline',
     use_augmentation: bool = True,
 ) -> Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, torch.utils.data.DataLoader, Tuple[str, str]]:
-    """
-    Create train/valid/test dataloaders for face detection dataset.
-
-    Args:
-        model_name: Name of the model to determine input size and augmentation strategy
-        use_augmentation: Whether to use data augmentation for training
-    Returns (train_loader, valid_loader, test_loader, classes).
-    """
-    # Determine input size based on model
     pretrained_models = ['resnet18', 'mobilenetv2', 'efficientnet']
     if model_name in pretrained_models:
         input_size = 224
-        # Normalization for ImageNet pretrained models (RGB 3 channels)
-        # Note: We convert grayscale to RGB by duplicating channels, so we use RGB normalization
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     else:
         input_size = 36
-        # Normalization for grayscale (1 channel)
         normalize = transforms.Normalize(mean=(0.5,), std=(0.5,))
     
-    # Data augmentation for training
     if use_augmentation and model_name in pretrained_models:
         train_transform = transforms.Compose([
-            transforms.Grayscale(num_output_channels=3),  # Convert to RGB for pretrained models
-            transforms.Resize((input_size + 32, input_size + 32)),  # Slightly larger for random crop
+            transforms.Grayscale(num_output_channels=3),
+            transforms.Resize((input_size + 32, input_size + 32)),
             transforms.RandomCrop(input_size),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(degrees=10),
@@ -50,7 +37,6 @@ def get_data_loaders(
             normalize,
         ])
     elif use_augmentation:
-        # Light augmentation for small CNNs
         train_transform = transforms.Compose([
             transforms.Grayscale(),
             transforms.Resize((input_size, input_size)),
@@ -60,10 +46,9 @@ def get_data_loaders(
             normalize,
         ])
     else:
-        # No augmentation
         if model_name in pretrained_models:
             train_transform = transforms.Compose([
-                transforms.Grayscale(num_output_channels=3),  # Convert to RGB
+                transforms.Grayscale(num_output_channels=3),
                 transforms.Resize((input_size, input_size)),
                 transforms.ToTensor(),
                 normalize,
@@ -76,10 +61,9 @@ def get_data_loaders(
                 normalize,
             ])
     
-    # Validation and test transforms (no augmentation)
     if model_name in pretrained_models:
         val_test_transform = transforms.Compose([
-            transforms.Grayscale(num_output_channels=3),  # Convert to RGB
+            transforms.Grayscale(num_output_channels=3),
             transforms.Resize((input_size, input_size)),
             transforms.ToTensor(),
             normalize,
@@ -118,4 +102,3 @@ def get_data_loaders(
 
     classes = ('noface', 'face')
     return train_loader, valid_loader, test_loader, classes
-
